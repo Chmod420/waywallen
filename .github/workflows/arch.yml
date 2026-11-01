@@ -42,20 +42,17 @@ jobs:
 
       - name: Install lito from the AUR
         run: |
-          sudo -u builder bash -c '
+          sudo -u builder -H bash -c '
             set -e
             cd ~ && git clone https://aur.archlinux.org/lito-bin.git
             cd lito-bin && makepkg -si --noconfirm
           '
 
       - name: Build package
+        working-directory: packaging/arch
         run: |
-          sudo -u builder bash -c '
-            set -e
-            cd "$GITHUB_WORKSPACE/packaging/arch"
-            MAKEFLAGS="-j$(nproc)" makepkg -s --noconfirm
-          '
-          ls -l packaging/arch/*.pkg.tar.zst
+          sudo -u builder -H env MAKEFLAGS="-j$(nproc)" makepkg -s --noconfirm
+          ls -l *.pkg.tar.zst
 
       - uses: actions/upload-artifact@v4
         with:
