@@ -1,0 +1,68 @@
+# Arch Linux package for the Chmod420/waywallen fork.
+# Builds whatever commit of this repository the PKGBUILD sits in
+# (packaging/arch -> repository root two levels up). Used by
+# .github/workflows/arch.yml, and works locally too:
+#     cd packaging/arch && makepkg -si
+
+_root="$(realpath "${startdir:-$PWD}/../..")"
+_commit="$(git -C "$_root" rev-parse HEAD 2>/dev/null)"
+
+pkgname=waywallen-git
+pkgver=0.5.0
+pkgrel=1
+pkgdesc="Wallpaper Manager for Linux (Chmod420 fork, built from git)"
+arch=(x86_64)
+url=https://github.com/Chmod420/waywallen
+license=(MIT)
+provides=(waywallen)
+conflicts=(waywallen waywallen-bin)
+depends=(libgcc libstdc++ glibc ffmpeg mesa sqlite vulkan-icd-loader
+         qt6-base qt6-declarative qt6-grpc qt6-websockets zstd hicolor-icon-theme)
+makedepends=(git git-lfs cmake cargo lito "clang>=22" lld llvm
+             vulkan-headers ninja qt6-tools qt6-shadertools)
+optdepends=('waywallen-display: Required for layer-shell based compositors')
+options=(!lto !debug)
+source=()
+sha256sums=()
+
+prepare() {
+    rm -rf "$srcdir/waywallen"
+    git clone --quiet "$_root" "$srcdir/waywallen"
+    git -C "$srcdir/waywallen" checkout --quiet --detach "$_commit"
+
+    cd "$srcdir/waywallen"
+    export RUSTUP_TOOLCHAIN=stable
+    lito fetch --all-features
+}
+
+pkgver() {
+    cd "$srcdir/waywallen"
+    local base
+    base="$(awk -F'"' '/^version = "/ { print $2; exit }' lito.toml)"
+    printf "%s.r%s.g%s" "$base" \
+        "$(git rev-list --count HEAD)" \
+        "$(git rev-parse --short=7 HEAD)"
+}
+
+build() {
+    cd "$srcdir/waywallen"
+    export RUSTUP_TOOLCHAIN=stable
+    export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
+    export ZSTD_SYS_USE_PKG_CONFIG=1
+
+    # https://github.com/llvm/llvm-project/issues/121709
+    CXXFLAGS="${CXXFLAGS//-Wp,-D_FORTIFY_SOURCE=3/}"
+    export CXXFLAGS
+
+    # --icf=safe is not supported by ld
+    RUSTFLAGS+=" -C link-arg=-fuse-ld=lld"
+    export RUSTFLAGS
+
+    lito build --profile plain --use-env-flags
+}
+
+package() {
+    cd "$srcdir/waywallen"
+    lito install --profile plain --prefix "$pkgdir/usr" --no-build
+    install -Dm644 LICENSE -t "$pkgdir/usr/share/licenses/$pkgname"
+}
